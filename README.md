@@ -16,3 +16,7 @@ python run.py --eval --ckpt_milestone Exps/basic_exps/Diffphydnet_sevir_None/che
 ```shell
 python run.py 
 ```
+
+### Display Video
+
+You can view the video by downloading it [here](resources/display.video.mp4).
