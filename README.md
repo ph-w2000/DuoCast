@@ -19,4 +19,4 @@ python run.py
 
 ### Display Video
 
-You can view the video by downloading it [here](resources/display.video.mp4).
+You can view the video by downloading it [here](resources/display_video.mp4).
