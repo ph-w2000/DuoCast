@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from einops import rearrange, repeat
 from typing import Optional
-from diffusers.models.attention import CrossAttention, FeedForward
+from diffusers.models.attention import Attention as CrossAttention, FeedForward, AdaLayerNorm
 import torch.nn.functional as F
 
 class Transformer3DModel(nn.Module):
@@ -147,7 +147,7 @@ class SparseCausalAttention(CrossAttention):
 
         query = self.to_q(hidden_states)
         dim = query.shape[-1]
-        query = self.reshape_heads_to_batch_dim(query)
+        query = self.head_to_batch_dim(query)
 
         encoder_hidden_states = hidden_states
         key = self.to_k(encoder_hidden_states)
@@ -164,8 +164,8 @@ class SparseCausalAttention(CrossAttention):
         value = torch.cat([value[:, [0] * video_length], value[:, former_frame_index]], dim=2)
         value = rearrange(value, "b f d c -> (b f) d c")
 
-        key = self.reshape_heads_to_batch_dim(key)
-        value = self.reshape_heads_to_batch_dim(value)
+        key = self.head_to_batch_dim(key)
+        value = self.head_to_batch_dim(value)
 
         attention_mask = None
 

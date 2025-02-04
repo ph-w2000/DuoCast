@@ -928,7 +928,7 @@ class GaussianDiffusion(nn.Module):
     
     @torch.no_grad()
     def ddim_sampling_latent(self, shape, cond, latent_model, **kwargs):
-        seq = range(0, self.num_timesteps, self.num_timesteps//250)
+        seq = range(0, self.num_timesteps, self.num_timesteps//125)
         b = self.b.to(self.device)
 
         with torch.no_grad():

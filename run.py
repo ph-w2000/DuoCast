@@ -155,7 +155,7 @@ class Runner(object):
         # =================================
 
         set_seed(self.args.seed)
-        self.model_name = self.model_name = ('Diff' if self.args.use_diff else 'Single') + self.args.backbone
+        self.model_name = 'DuoCast'
         self.exp_name   = f"{self.model_name}_{self.args.dataset}_{self.args.exp_note}"
         
         cur_dir         = os.path.dirname(os.path.abspath(__file__))
