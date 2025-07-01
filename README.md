@@ -10,6 +10,8 @@ Please visit [arXiv](https://arxiv.org/pdf/2412.01091) for more information.
 conda env create -f env.yaml
 conda activate DuoCast
 ```
+### Resource
+Pretrained DuoCast_PhDNet: [Google Drive](https://drive.google.com/file/d/1WS9pu6Ssde1hNPC1wIEO8Qyhktu7hFem/view?usp=share_link)
 
 ### Evaluation
 ```shell
