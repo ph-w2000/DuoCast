@@ -11,9 +11,9 @@ conda env create -f env.yaml
 conda activate DuoCast
 ```
 ### Resource
-Pretrained DuoCast_SimVP: [Google Drive](https://drive.google.com/file/d/1gm1gHCSC0qgH9oqKcF-W4M3YZ13fJRJt/view?usp=share_link)
-Pretrained DuoCast_PhDNet: [Google Drive](https://drive.google.com/file/d/1WS9pu6Ssde1hNPC1wIEO8Qyhktu7hFem/view?usp=share_link)
-Pretrained Autoencoder: [Google Drive](https://drive.google.com/file/d/1bA63-3UV-uVnVDXdpEBzsV9ekz_8ZpKm/view?usp=share_link)
+Pretrained DuoCast_SimVP: [Google Drive](https://drive.google.com/file/d/1gm1gHCSC0qgH9oqKcF-W4M3YZ13fJRJt/view?usp=share_link) </br>
+Pretrained DuoCast_PhDNet: [Google Drive](https://drive.google.com/file/d/1WS9pu6Ssde1hNPC1wIEO8Qyhktu7hFem/view?usp=share_link) </br>
+Pretrained Autoencoder: [Google Drive](https://drive.google.com/file/d/1bA63-3UV-uVnVDXdpEBzsV9ekz_8ZpKm/view?usp=share_link) </br>
 
 ### Evaluation
 ```shell
