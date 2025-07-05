@@ -19,7 +19,7 @@ HMF_COLORS = np.array([
 ]) / 255
 
 
-def vis_res(pred_seq, gt_seq, save_path, data_type='vil',
+def vis_res(input_seq, pred_seq, gt_seq, save_path, data_type='vil',
             save_grays=False, do_hmf=False, save_colored=False,save_gif=False,
             pixel_scale = None, thresholds = None, gray2color = None
             ):
@@ -27,9 +27,11 @@ def vis_res(pred_seq, gt_seq, save_path, data_type='vil',
     if isinstance(pred_seq, torch.Tensor) or isinstance(gt_seq, torch.Tensor):
         pred_seq = pred_seq.detach().cpu().numpy()
         gt_seq = gt_seq.detach().cpu().numpy()
+        input_seq = input_seq.detach().cpu().numpy()
+    input_seq = input_seq.squeeze()
     pred_seq = pred_seq.squeeze()
     gt_seq = gt_seq.squeeze()
-    os.makedirs(save_path, exist_ok=True)
+    # os.makedirs(save_path, exist_ok=True)
 
     if save_grays:
         os.makedirs(osp.join(save_path, 'pred'), exist_ok=True)
@@ -48,9 +50,12 @@ def vis_res(pred_seq, gt_seq, save_path, data_type='vil',
         pred_seq = pred_seq.astype(np.uint8)
         gt_seq = gt_seq * pixel_scale
         gt_seq = gt_seq.astype(np.uint8)
+        input_seq = input_seq * pixel_scale
+        input_seq = input_seq.astype(np.uint8)
     
     colored_pred = np.array([gray2color(pred_seq[i], data_type=data_type) for i in range(len(pred_seq))], dtype=np.float64)
     colored_gt =  np.array([gray2color(gt_seq[i], data_type=data_type) for i in range(len(gt_seq))],dtype=np.float64)
+    colored_input =  np.array([gray2color(input_seq[i], data_type=data_type) for i in range(len(input_seq))],dtype=np.float64)
 
     if save_colored:
         os.makedirs(osp.join(save_path, 'pred_colored'), exist_ok=True)
@@ -60,15 +65,38 @@ def vis_res(pred_seq, gt_seq, save_path, data_type='vil',
             plt.imsave(osp.join(save_path, 'targets_colored', f'{i}.png'), gt)
 
 
+    separator_width = 5
+    separator = 1 * np.ones((colored_pred[0].shape[0], separator_width, colored_pred[0].shape[2]), dtype=colored_pred[0].dtype)
+
+    grid_input = np.concatenate([
+        np.concatenate([
+            np.concatenate([i, separator], axis=-2) if idx < len(colored_input) - 1 else i
+            for idx, i in enumerate(colored_input)
+        ], axis=-2)
+    ], axis=-3)
+    grid_input = np.pad(grid_input, ((0, 0), (0, 670), (0, 0)), mode='constant', constant_values=0)
+    # grid_input = np.pad(grid_input, ((0, 0), (0, 5), (0, 0)), mode='constant', constant_values=0)
+
+
+    # Concatenate with separator in between for grid_pred
     grid_pred = np.concatenate([
-        np.concatenate([i for i in colored_pred], axis=-2),
+        np.concatenate([
+            np.concatenate([i, separator], axis=-2) if idx < len(colored_pred) - 1 else i
+            for idx, i in enumerate(colored_pred) if idx % 2 == 0
+        ], axis=-2)
     ], axis=-3)
+
+    # Concatenate with separator in between for grid_gt
     grid_gt = np.concatenate([
-        np.concatenate([i for i in colored_gt], axis=-2,),
+        np.concatenate([
+            np.concatenate([i, separator], axis=-2) if idx < len(colored_gt) - 1 else i
+            for idx, i in enumerate(colored_gt) if idx % 2 == 0
+        ], axis=-2)
     ], axis=-3)
-    
-    grid_concat = np.concatenate([grid_pred, grid_gt], axis=-3,)
-    plt.imsave(osp.join(save_path, 'all.png'), grid_concat)
+
+    separator_vertical = 1 * np.ones((separator_width, grid_pred.shape[1], grid_pred.shape[2]), dtype=grid_pred.dtype)
+    grid_concat = np.concatenate([grid_input, separator_vertical, grid_pred, separator_vertical, grid_gt], axis=-3,)
+    plt.imsave(osp.join(save_path+'_all.png'), grid_concat)
     
     if save_gif:
         clip = ImageSequenceClip(list(colored_pred * 255), fps=4)
@@ -98,10 +126,10 @@ def vis_res(pred_seq, gt_seq, save_path, data_type='vil',
 
 
 DATAPATH = {
-    'cikm' : 'path/to/dataset/cikm.h5',
-    'shanghai' : 'path/to/dataset/shanghai.h5',
-    'meteo' : 'path/to/dataset/meteo_radar.h5',
-    'sevir' : '../DiffCastB/data/sevir/'
+    'cikm' : 'data/CIKM2017/CIKM2017.h5',
+    'shanghai' : 'data/shanghai/shanghai.h5',
+    'meteo' : 'data/MeteoNet/MeteoNet.h5',
+    'sevir' : 'data/sevir'
 }
 
 def get_dataset(data_name, img_size, seq_len, **kwargs):
@@ -131,7 +159,7 @@ def get_dataset(data_name, img_size, seq_len, **kwargs):
         from .dataset_sevir import SEVIRTorchDataset, gray2color, PIXEL_SCALE, THRESHOLDS
         
         train_valid_split = (2019, 1, 1)
-        valid_test_split = (2019, 10, 1)
+        valid_test_split = (2019, 6, 1)
         batch_size = kwargs.get('batch_size', 1)
         
         train = SEVIRTorchDataset(

@@ -928,7 +928,7 @@ class GaussianDiffusion(nn.Module):
     
     @torch.no_grad()
     def ddim_sampling_latent(self, shape, cond, latent_model, **kwargs):
-        seq = range(0, self.num_timesteps, self.num_timesteps//125)
+        seq = range(0, self.num_timesteps, self.num_timesteps//50)
         b = self.b.to(self.device)
 
         with torch.no_grad():
@@ -1078,7 +1078,7 @@ class GaussianDiffusion(nn.Module):
             raise NotImplementedError("We are sorry that we do not support training process for now because of business limitation ")
         return pred, None
     
-    def training_losses(self, frames_in, frames_gt, vae, **kwargs ):
+    def forward(self, frames_in, frames_gt, vae, **kwargs ):
         B, T_in, c, h, w = frames_in.shape
         device = self.device
         T_out = frames_gt.shape[1]

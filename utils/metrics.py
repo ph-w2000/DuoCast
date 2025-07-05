@@ -151,8 +151,8 @@ class Evaluator(object):
 
         batch_size, seq_len = true_batch.shape[:2]
         
-        # lpips_batch = self.cal_batch_lpips(pred_batch, true_batch)
-        # self.losses['lpips'].extend(lpips_batch)
+        lpips_batch = self.cal_batch_lpips(pred_batch, true_batch)
+        self.losses['lpips'].extend(lpips_batch)
         
         pred = self.float2int(pred_batch)
         gt = self.float2int(true_batch)
@@ -288,13 +288,12 @@ class Evaluator(object):
         res_dict = {
             
         }
-        # print_log('*'*30+' < Evaluation Results: > '+'*'*30,)
-        # print_log(f"Total {self.total} samples with {self.seq_len} seq_len.")
-        # print_log('*'*90)
+        print_log('*'*30+' < Evaluation Results: > '+'*'*30,)
+        print_log(f"Total {self.total} samples with {self.seq_len} seq_len.")
+        print_log('*'*90)
         
         avg_csi, avg_far, avg_pod, avg_hss = [], [], [], []
         avg_csi44, avg_csi16 = [], []
-        frame_wise_csi = []
         for threshold in self.thresholds:
             hits = np.array(self.metrics[threshold]["hits"])
             misses = np.array(self.metrics[threshold]["misses"])
@@ -319,8 +318,6 @@ class Evaluator(object):
             far1 = np.nan_to_num(far1)
             pod1 = np.nan_to_num(pod1)
             hss1 = np.nan_to_num(hss1)
-
-            frame_wise_csi.append(csi1)
             
             avg_csi.append(np.mean(csi1))
             avg_far.append(np.mean(far1))
@@ -346,23 +343,20 @@ class Evaluator(object):
             avg_csi16.append(csi_pool16)
          
             # if threshold == 30:
-            # print_log('='*20 + f"Threshold: {threshold} with melthod 1"+'='*20)
-            # print_log(f'<CSI> : {np.mean(csi1)}; '+str(csi1))
-            # print_log(f'<FAR> : {np.mean(far1)}; '+str(far1))
-            # print_log(f'<POD> : {np.mean(pod1)}; '+str(pod1))
-            # print_log(f'<HSS> : {np.mean(hss1)}; '+str(hss1))
+            print_log('='*20 + f"Threshold: {threshold} with melthod 1"+'='*20)
+            print_log(f'<CSI> : {np.mean(csi1)}; '+str(csi1))
+            print_log(f'<FAR> : {np.mean(far1)}; '+str(far1))
+            print_log(f'<POD> : {np.mean(pod1)}; '+str(pod1))
+            print_log(f'<HSS> : {np.mean(hss1)}; '+str(hss1))
             
-            # print_log(f"< CSI_POOL 4x4 > : {csi_pool44}; CSI_POOL 16x16: {csi_pool16}")
+            print_log(f"< CSI_POOL 4x4 > : {csi_pool44}; CSI_POOL 16x16: {csi_pool16}")
             
 
-        # print_log('*'*20 + f"Overall Avg Metrics on Thresholds {self.thresholds}"+'*'*20)
-        # print_log(f"[ avg_csi ] : {np.mean(avg_csi)}; [ avg_far ] : {np.mean(avg_far)}; [ avg_pod ] : {np.mean(avg_pod)}; [ avg_hss] : {np.mean(avg_hss)}")
-        # print_log(f"[ avg_csi_pool 4x4 ] : {np.mean(avg_csi44)}; [ avg_csi_pool 16x16 ]: {np.mean(avg_csi16)}")
+        print_log('*'*20 + f"Overall Avg Metrics on Thresholds {self.thresholds}"+'*'*20)
+        print_log(f"[ avg_csi ] : {np.mean(avg_csi)}; [ avg_far ] : {np.mean(avg_far)}; [ avg_pod ] : {np.mean(avg_pod)}; [ avg_hss] : {np.mean(avg_hss)}")
+        print_log(f"[ avg_csi_pool 4x4 ] : {np.mean(avg_csi44)}; [ avg_csi_pool 16x16 ]: {np.mean(avg_csi16)}")
 
-        frame_wise_csi_mean = np.mean(np.array(frame_wise_csi),axis=0)
-        for csi in frame_wise_csi_mean:
-            print(round(csi,3), end=",")
-        print()
+        
         res_dict['csi'] = np.nan_to_num(np.mean(avg_csi))
         
         mses = np.mean(np.array(self.losses['mse']), axis=0)
@@ -371,18 +365,18 @@ class Evaluator(object):
         psnrs = np.mean(np.array(self.losses['psnr']), axis=0)
         ssims = np.mean(np.array(self.losses['ssim']), axis=0)
         crpss = np.mean(np.array(self.losses['crps']), axis=0)
-        # lpipss = np.mean(np.array(self.losses['lpips']), axis=0)
+        lpipss = np.mean(np.array(self.losses['lpips']), axis=0)
         
-        # print_log('='*20 + f"Losses with {self.seq_len} seq_len"+'='*20)
-        # print_log(f'<MSE> : {np.mean(mses)}; '+str(mses))
-        # print_log(f'<MAE> : {np.mean(mass)}; '+str(mass))
-        # print_log(f'<RMSE> : {np.mean(rmses)}; '+str(rmses))
-        # print_log(f'<PSNR> : {np.mean(psnrs)}; '+str(psnrs))
-        # print_log(f'<SSIM> : {np.mean(ssims)}; '+str(ssims))
-        # print_log(f'<CRPS> : {np.mean(crpss)}; '+str(crpss))
-        # print_log(f'<LPIPS> : {np.mean(lpipss)}; '+str(lpipss))
+        print_log('='*20 + f"Losses with {self.seq_len} seq_len"+'='*20)
+        print_log(f'<MSE> : {np.mean(mses)}; '+str(mses))
+        print_log(f'<MAE> : {np.mean(mass)}; '+str(mass))
+        print_log(f'<RMSE> : {np.mean(rmses)}; '+str(rmses))
+        print_log(f'<PSNR> : {np.mean(psnrs)}; '+str(psnrs))
+        print_log(f'<SSIM> : {np.mean(ssims)}; '+str(ssims))
+        print_log(f'<CRPS> : {np.mean(crpss)}; '+str(crpss))
+        print_log(f'<LPIPS> : {np.mean(lpipss)}; '+str(lpipss))
         
-        # print_log('='*90)
+        print_log('='*90)
         
         return res_dict
     

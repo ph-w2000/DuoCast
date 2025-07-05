@@ -21,6 +21,7 @@ from diffusers import (
     get_linear_schedule_with_warmup,
     get_cosine_schedule_with_warmup,
 )
+from accelerate.utils import gather_object
 
 from datasets.get_datasets import get_dataset
 from utils.metrics import Evaluator
@@ -29,12 +30,12 @@ from models.vae.autoencoder_kl import AutoencoderKL
 
 os.environ["ACCELERATE_DEBUG_MODE"] = "1"
 
-# wandb.init(mode="disabled")
-
 def create_parser():
     # --------------- Basic ---------------
     parser = argparse.ArgumentParser()
-    parser.add_argument('--vae_path', default='models/vae/pretrained_sevirlr_vae_8x8x64.pt',  type=str, help='the ckpt path for VAE')
+    
+    parser.add_argument('--backbone', default='simvp',  type=str,                 help='backbone model for deterministic prediction')
+    parser.add_argument('--use_diff', action="store_true", default=True,        help='Weather use diff framework, as for ablation study')
     
     parser.add_argument("--seed",           type=int,   default=0,              help='Experiment seed')
     parser.add_argument("--exp_dir",        type=str,   default='basic_exps',   help="experiment directory")
@@ -84,32 +85,7 @@ class Runner(object):
         self.args = args
         self._preparation()
         
-        # Config DDP kwargs from accelerate
-        project_config = ProjectConfiguration(
-            project_dir=self.exp_dir,
-            logging_dir=self.log_path
-        )
-        ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=False)
-        process_kwargs = InitProcessGroupKwargs(timeout=timedelta(seconds=5400))
-        
-        self.accelerator = Accelerator(
-            project_config  =   project_config,
-            kwargs_handlers =   [ddp_kwargs, process_kwargs],
-            mixed_precision =   self.args.mixed_precision,
-            log_with        =   'wandb'
-        )
-        
-        # Config log tracker 'wandb' from accelerate
-        self.accelerator.init_trackers(
-            project_name=self.exp_name,
-            config=self.args.__dict__,
-            init_kwargs={"wandb": 
-                {
-                "mode": self.args.wandb_state,
-                # 'resume': self.args.ckpt_milestone
-                }
-                         }   # disabled, online, offline
-        )
+        self.accelerator = Accelerator()
         
         print_log('============================================================', self.is_main)
         print_log("                 Experiment Start                           ", self.is_main)
@@ -123,19 +99,12 @@ class Runner(object):
         
         # distributed ema for parallel sampling
 
-        self.model, self.optimizer,  self.scheduler, self.train_loader, self.valid_loader, self.test_loader = self.accelerator.prepare(
-            self.model, 
+        self.model, self.vae, self.optimizer,  self.scheduler, self.train_loader, self.valid_loader, self.test_loader = self.accelerator.prepare(
+            self.model, self.vae,
             self.optimizer, self.scheduler,
             self.train_loader, self.valid_loader, self.test_loader
         )
-        
-        self.train_dl_cycle = cycle(self.train_loader)
-        if self.is_main:
-            start = time.time()
-            next(self.train_dl_cycle)
-            print_log(f"Data Loading Time: {time.time() - start}", self.is_main)
-            # print_log(show_img_info(sample), self.is_main)
-            
+
         print_log(f"gpu_nums: {torch.cuda.device_count()}, gpu_id: {torch.cuda.current_device()}")
         
         # if self.args.ckpt_milestone is not None:
@@ -155,7 +124,7 @@ class Runner(object):
         # =================================
 
         set_seed(self.args.seed)
-        self.model_name = 'DuoCast'
+        self.model_name = self.model_name = ('DuoCast' if self.args.use_diff else 'Single') + self.args.backbone
         self.exp_name   = f"{self.model_name}_{self.args.dataset}_{self.args.exp_note}"
         
         cur_dir         = os.path.dirname(os.path.abspath(__file__))
@@ -230,28 +199,52 @@ class Runner(object):
         # =================================
         # import and create different models given model config
         # =================================
-        from models.phydnet import get_model
-        kwargs = {
-            "in_shape": (self.args.img_channel, self.args.img_size, self.args.img_size),
-            "T_in": self.args.frames_in,
-            "T_out": self.args.frames_out,
-            "device": self.device
-        }
-        model = get_model(**kwargs)
+
+        if self.args.backbone == 'simvp':
+            from models.simvp import get_model
+            kwargs = {
+                "in_shape": (self.args.img_channel, self.args.img_size, self.args.img_size),
+                "T_in": self.args.frames_in,
+                "T_out": self.args.frames_out,
+            }
+            model = get_model(**kwargs)
         
+        elif self.args.backbone == 'phydnet':
+            from models.phydnet import get_model
+            kwargs = {
+                "in_shape": (self.args.img_channel, self.args.img_size, self.args.img_size),
+                "T_in": self.args.frames_in,
+                "T_out": self.args.frames_out,
+                "device": self.device
+            }
+            model = get_model(**kwargs)
         
-        from duocast import get_model
-        kwargs = {
-            'img_channels' : self.args.img_channel,
-            'dim' : 64,
-            'dim_mults' : (1,2,4,8),
-            'T_in': self.args.frames_in,
-            'T_out': self.args.frames_out,
-            'sampling_timesteps': 50,
-        }
-        diff_model = get_model(**kwargs)
-        diff_model.load_backbone(model)
-        model = diff_model
+        elif self.args.backbone == 'pixel':
+            from models.pixel import get_model
+            kwargs = {
+                "in_shape": (self.args.img_channel, self.args.img_size, self.args.img_size),
+                "T_in": self.args.frames_in,
+                "T_out": self.args.frames_out,
+                "device": self.device
+            }
+            model = get_model(**kwargs)
+            
+        else:
+            raise NotImplementedError
+        
+        if self.args.use_diff:
+            from duocast import get_model
+            kwargs = {
+                'img_channels' : self.args.img_channel,
+                'dim' : 64,
+                'dim_mults' : (1,2,4,8),
+                'T_in': self.args.frames_in,
+                'T_out': self.args.frames_out,
+                'sampling_timesteps': 5,
+            }
+            diff_model = get_model(**kwargs)
+            diff_model.load_backbone(model)
+            model = diff_model
             
         self.model = model
         self.ema = EMA(self.model, beta=self.args.ema_rate, update_every=20).to(self.device)        
@@ -271,9 +264,8 @@ class Runner(object):
             layers_per_block=2,
             out_channels=1).eval()
 
-        state_dict = torch.load(self.args.vae_path,map_location=torch.device("cpu"))
+        state_dict = torch.load('pretrained_sevirlr_vae_8x8x64_v1.pt',map_location=torch.device("cpu"))
         self.vae.load_state_dict(state_dict=state_dict)
-        self.vae.to(self.device)
 
 
     def _build_optimizer(self):
@@ -284,7 +276,7 @@ class Runner(object):
         num_epoch = math.ceil(self.args.training_steps / num_steps_per_epoch)
         self.global_epochs = self.args.epochs
         self.global_steps = self.global_epochs * num_steps_per_epoch
-        self.steps_per_epoch = num_steps_per_epoch
+        self.steps_per_epoch = math.ceil(num_steps_per_epoch / self.accelerator.num_processes)
         
         self.cur_step, self.cur_epoch = 0, 0
 
@@ -380,10 +372,17 @@ class Runner(object):
         
     
     def train(self):
+        if self.accelerator.is_main_process:
+            # os.environ["WANDB_MODE"] = "offline"
+            os.environ["WANDB_DIR"] = self.exp_dir 
+            wandb.init(project="DuoCast", name="latent", config={})
+            wandb.config.update(self.args) 
+
         # set global step as traing process
+        tqdm_total = math.ceil(self.global_steps / self.accelerator.num_processes)
         pbar = tqdm(
             initial=self.cur_step,
-            total=self.global_steps,
+            total=tqdm_total,
             disable=not self.is_main,
         )
         start_epoch = self.cur_epoch
@@ -403,13 +402,6 @@ class Runner(object):
                         for name, param in self.model.named_parameters():
                             if param.grad is None:
                                 print_log(name, self.is_main)
-
-                wandb.log({'loss':(loss_dict['total_loss'].detach().item()), 
-                        'loss_backbone':(loss_dict['phydnet'].detach().item()), 
-                        'loss_pixel':(loss_dict['pixel_ep'].detach().item()), 
-                        'loss_latent':(loss_dict['latent_ep'].detach().item()), 
-                        'epoch':epoch,
-                        'steps':self.cur_step}) 
     
                 self.accelerator.wait_for_everyone()
                 if self.accelerator.sync_gradients:
@@ -437,27 +429,25 @@ class Runner(object):
                     logging.info(state_str+'::'+str(log_dict))
                 self.ema.update()
 
+                if self.accelerator.is_main_process:
+                    wandb.log(
+                        {
+                            "Loss/total_loss": loss_dict['total_loss'].item(),
+                            "Loss/phydnet_loss": loss_dict['phydnet'].item(),
+                            "Loss/pixel_ep_loss": loss_dict['pixel_ep'].item(),
+                            "Loss/latent_ep_loss": loss_dict['latent_ep'].item(),
+                            "LR": lr,
+                        }, 
+                        step=self.cur_step
+                    )
+
                 self.cur_step += 1
                 pbar.update(1)
                 
-                # do santy check at begining
-                if self.cur_step == 1:
-                    """ santy check """
-                    if not osp.exists(self.sanity_path):
-                        try:
-                            print_log(f" ========= Running Sanity Check ==========", self.is_main)
-                            radar_ori, radar_recon= self._sample_batch(batch)
-                            os.makedirs(self.sanity_path)
-                            if self.is_main:
-                                for i in range(radar_ori.shape[0]):
-                                    self.visiual_save_fn(radar_recon[i], radar_ori[i], osp.join(self.sanity_path, f"{i}/vil"),data_type='vil')
-
-                        except Exception as e:
-                            print_log(e, self.is_main)
-                            print_log("Sanity Check Failed", self.is_main)
-
             # save checkpoint and do test every epoch
-            self.save()
+
+            if epoch >15:
+                self.save()
             print_log(f" ========= Finisth one Epoch ==========", self.is_main)
 
         self.accelerator.end_training()
@@ -470,7 +460,12 @@ class Runner(object):
         radar_batch = self._get_seq_data(batch)
         frames_in, frames_out = radar_batch[:,:self.args.frames_in], radar_batch[:,self.args.frames_in:]
         assert radar_batch.shape[1] == self.args.frames_out + self.args.frames_in, "radar sequence length error"
-        loss = self.model.training_losses(frames_in=frames_in, frames_gt=frames_out, compute_loss=True, vae=self.vae)
+        loss = self.model(
+            frames_in=frames_in.to(self.device, non_blocking=True), 
+            frames_gt=frames_out.to(self.device, non_blocking=True),
+            compute_loss=True,
+            vae=self.vae
+        )
         if loss is None:
             raise ValueError("Loss is None, please check the model predict function")
         loss['total_loss'] = loss['phydnet'] * 0.1 + loss['pixel_ep'] * 0.1 + loss['latent_ep'] * 0.5
@@ -501,6 +496,7 @@ class Runner(object):
         cnt = 0
         save_dir = osp.join(self.test_path, f"sample-{milestone}") if do_test else osp.join(self.valid_path, f"sample-{milestone}")
         os.makedirs(save_dir, exist_ok=True)
+
         if self.is_main:
             eval = Evaluator(
                 seq_len=self.args.frames_out,
@@ -508,22 +504,31 @@ class Runner(object):
                 thresholds=self.thresholds,
                 save_path=save_dir,
             )
-        # start test loop
-        for batch in tqdm(data_loader,desc='Test Samples', disable=not self.is_main):
-            # sample
-            radar_ori, radar_recon= self._sample_batch(batch)
-            # evaluate result and save
-            eval.evaluate(radar_ori, radar_recon)
-            if self.is_main:
-                for i in range(radar_ori.shape[0]):
-                    self.visiual_save_fn(radar_recon[i], radar_ori[i], osp.join(save_dir, f"{cnt}-{i}/vil"),data_type='vil')
 
+        # start test loop
+        sample_fn = self.model.predict
+        cnt = 0
+        for batch in tqdm(data_loader,desc='Test Samples', disable=not self.is_main):
+            result_list = []
+            # sample
+            frame_in = self.args.frames_in
+            radar_batch = self._get_seq_data(batch)
+            radar_input, radar_gt = radar_batch[:,:frame_in], radar_batch[:,frame_in:]
+            radar_pred, _ = sample_fn(radar_input.to(self.device, non_blocking=True), self.vae, compute_loss=False )
+            result_list.append([radar_gt, radar_pred])
+
+            result_list = gather_object(result_list)
+            if self.is_main:
+                for radar_ori, radar_recon in result_list:
+                    eval.evaluate(radar_ori, radar_recon)
+                if cnt >= 0:
+                    for i in range(radar_input.shape[0]):
+                        self.visiual_save_fn(radar_input[i], radar_pred[i], radar_gt[i], osp.join(save_dir, f"{cnt}-{i}"), data_type='vil')
+            cnt+=1
             self.accelerator.wait_for_everyone()
-            # cnt += 1
-            # if cnt > 10:
-            #     break
-        # test done
+        
         if self.is_main:
+            # test done
             res = eval.done()
             print_log(f"Test Results: {res}")
             print_log("="*30)
